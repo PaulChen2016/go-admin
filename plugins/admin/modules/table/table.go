@@ -88,6 +88,7 @@ type Table interface {
 	UpdateDataFromDatabase(dataList form.Values) error
 	InsertDataFromDatabase(dataList form.Values) error
 	DeleteDataFromDatabase(id string) error
+	Copy() Table
 }
 
 type PrimaryKey struct {
@@ -262,6 +263,24 @@ func NewDefaultTable(cfg Config) Table {
 		deletable:        cfg.Deletable,
 		exportable:       cfg.Exportable,
 		primaryKey:       cfg.PrimaryKey,
+	}
+}
+
+func (tb DefaultTable) Copy() Table {
+	return DefaultTable{
+		form: types.NewFormPanel().SetTable(tb.form.Table).
+			SetDescription(tb.form.Description).
+			SetTitle(tb.form.Title),
+		info: types.NewInfoPanel().SetTable(tb.info.Table).
+			SetDescription(tb.info.Description).
+			SetTitle(tb.info.Title),
+		connectionDriver: tb.connectionDriver,
+		connection:       tb.connection,
+		canAdd:           tb.canAdd,
+		editable:         tb.editable,
+		deletable:        tb.deletable,
+		exportable:       tb.exportable,
+		primaryKey:       tb.primaryKey,
 	}
 }
 
@@ -519,7 +538,7 @@ func (tb DefaultTable) getDataFromDatabase(path string, params parameter.Paramet
 				HelpMsg:   field.FilterHelpMsg,
 				FormType:  field.FilterType,
 				Editable:  true,
-				Value:     value,
+				Value:     template.HTML(value),
 				Value2:    value2,
 				Options:   field.FilterOptions.SetSelected(params.GetFieldValue(field.Field), field.FilterType.SelectedLabel()),
 				OptionExt: field.FilterOptionExt,
@@ -531,7 +550,7 @@ func (tb DefaultTable) getDataFromDatabase(path string, params parameter.Paramet
 					Field:    field.Field + "__operator__",
 					Head:     field.Head,
 					TypeName: field.TypeName,
-					Value:    field.FilterOperator.Value(),
+					Value:    template.HTML(field.FilterOperator.Value()),
 					FormType: field.FilterType,
 					Hide:     true,
 				})
@@ -695,7 +714,7 @@ func (tb DefaultTable) getDataFromDatabase(path string, params parameter.Paramet
 		InfoList: infoList,
 		Paginator: paginator.Get(path, params, size, tb.info.GetPageSizeList()).
 			SetExtraInfo(template.HTML(fmt.Sprintf("<b>" + language.Get("query time") + ": </b>" +
-				fmt.Sprintf("%fs", endTime.Sub(beginTime).Seconds())))),
+				fmt.Sprintf("%.3fms", endTime.Sub(beginTime).Seconds()*1000)))),
 		Title:       tb.info.Title,
 		FormData:    filterForm,
 		Description: tb.info.Description,
@@ -883,13 +902,14 @@ func (tb DefaultTable) getInjectValueFromFormValue(dataList form.Values) dialect
 
 	if !dataList.IsSingleUpdatePost() {
 		for _, field := range tb.form.FieldList {
-			if field.FormType.IsSelect() {
+			if field.FormType.IsMultiSelect() {
 				if _, ok := dataList[field.Field+"[]"]; !ok {
 					dataList[field.Field+"[]"] = []string{""}
 				}
 			}
 		}
 	}
+
 	dataList = dataList.RemoveRemark()
 
 	for k, v := range dataList {
